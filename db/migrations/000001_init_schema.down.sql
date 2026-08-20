@@ -1,0 +1,7 @@
+DROP TABLE IF EXISTS messages;
+DROP TABLE IF EXISTS participants;
+DROP TABLE IF EXISTS conversations;
+DROP TABLE IF EXISTS users;
+
+
+DROP EXTENSION IF EXISTS pgcrypto;

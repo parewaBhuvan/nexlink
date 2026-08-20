@@ -1,0 +1,4 @@
+.env
+nexlink
+*.exe
+.DS_Store
