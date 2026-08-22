@@ -10,6 +10,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/parewaBhuvan/nexlink/internal/auth"
+	"github.com/parewaBhuvan/nexlink/internal/otp"
+	"github.com/parewaBhuvan/nexlink/internal/router"
 )
 
 func main() {
@@ -33,7 +37,6 @@ func main() {
 		log.Fatalf("unable to ping database: %v", err)
 	}
 	log.Println("connected to Postgres successfully")
-	router := gin.Default()
 
 	redisAddr := os.Getenv("REDIS_ADDR")
 	if redisAddr == "" {
@@ -49,7 +52,11 @@ func main() {
 	}
 	log.Println("connected to Redis successfully")
 
-	router.GET("/health", func(c *gin.Context) {
+	otpSender := otp.NewConsoleSender()
+	authService := auth.NewService(pool, rdb, otpSender)
+	r := router.NewRouter(authService)
+
+	r.GET("/health", func(c *gin.Context) {
 		dbErr := pool.Ping(c.Request.Context())
 		redisErr := rdb.Ping(c.Request.Context()).Err()
 
@@ -69,5 +76,5 @@ func main() {
 		})
 	})
 
-	router.Run(":8080")
+	r.Run(":8080")
 }
