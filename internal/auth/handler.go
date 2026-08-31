@@ -78,3 +78,30 @@ func (s *Service) VerifyOTPHandler(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"token": token})
 }
+
+type UpdateUsernameRequest struct {
+	UserName string `json:"user_name" binding:"required"`
+}
+
+func (s *Service) UpdateUsernameHandler(c *gin.Context, userID string) {
+	var req UpdateUsernameRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	err := s.UpdateUsername(c.Request.Context(), userID, req.UserName)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrUsernameTooShort):
+			c.JSON(http.StatusBadRequest, gin.H{"error": ErrUsernameTooShort.Error()})
+		case errors.Is(err, ErrUsernameTaken):
+			c.JSON(http.StatusConflict, gin.H{"error": ErrUsernameTaken.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"user_name": req.UserName})
+}

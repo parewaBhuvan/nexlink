@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/parewaBhuvan/nexlink/internal/otp"
 	"github.com/redis/go-redis/v9"
@@ -119,6 +120,11 @@ func (s *Service) GetOrCreateUser(ctx context.Context, mobile string) (string, e
 
 	return userID, nil
 }
+
+const sessionTTL = 3 * 24 * time.Hour
+
+var ErrSessionNotFound = errors.New("session not found or expired")
+
 func (s *Service) CreateSession(ctx context.Context, userID string) (string, error) {
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
@@ -127,11 +133,25 @@ func (s *Service) CreateSession(ctx context.Context, userID string) (string, err
 	token := hex.EncodeToString(tokenBytes)
 
 	sessionKey := fmt.Sprintf("session:%s", token)
-	if err := s.redis.Set(ctx, sessionKey, userID, 3*24*time.Hour).Err(); err != nil {
+	if err := s.redis.Set(ctx, sessionKey, userID, sessionTTL).Err(); err != nil {
 		return "", err
 	}
 
 	return token, nil
+}
+
+func (s *Service) GetSession(ctx context.Context, token string) (string, error) {
+	sessionKey := fmt.Sprintf("session:%s", token)
+
+	userID, err := s.redis.GetEx(ctx, sessionKey, sessionTTL).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return "", ErrSessionNotFound
+		}
+		return "", err
+	}
+
+	return userID, nil
 }
 
 var (
@@ -171,6 +191,31 @@ func (s *Service) VerifyOTP(ctx context.Context, mobile string, submittedCode st
 	}
 
 	s.redis.Del(ctx, otpKey, attemptsKey)
+
+	return nil
+}
+
+var (
+	ErrUsernameTooShort = errors.New("username must be longer than 3 characters")
+	ErrUsernameTaken    = errors.New("username is already taken")
+)
+
+func (s *Service) UpdateUsername(ctx context.Context, userID, newName string) error {
+	if len(newName) <= 3 {
+		return ErrUsernameTooShort
+	}
+
+	_, err := s.db.Exec(ctx,
+		`UPDATE users SET user_name = $1 WHERE user_id = $2`,
+		newName, userID,
+	)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ErrUsernameTaken
+		}
+		return err
+	}
 
 	return nil
 }
