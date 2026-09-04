@@ -105,3 +105,13 @@ func (s *Service) UpdateUsernameHandler(c *gin.Context, userID string) {
 
 	c.JSON(http.StatusOK, gin.H{"user_name": req.UserName})
 }
+
+func (s *Service) CreateWSTicketHandler(c *gin.Context, userID string) {
+	ticket, err := s.CreateWSTicket(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ticket": ticket})
+}

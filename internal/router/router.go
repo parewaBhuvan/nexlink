@@ -29,6 +29,14 @@ func NewRouter(authService *auth.Service) *gin.Engine {
 			}
 			authService.UpdateUsernameHandler(c, userID)
 		})
+		protected.POST("/ws/ticket", func(c *gin.Context) {
+			userID, ok := middleware.GetUserID(c)
+			if !ok {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "user_id missing from context"})
+				return
+			}
+			authService.CreateWSTicketHandler(c, userID)
+		})
 	}
 
 	return r

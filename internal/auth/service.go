@@ -219,3 +219,36 @@ func (s *Service) UpdateUsername(ctx context.Context, userID, newName string) er
 
 	return nil
 }
+
+const wsTicketTTL = 30 * time.Second
+
+var ErrTicketNotFound = errors.New("ticket not found or already used")
+
+func (s *Service) CreateWSTicket(ctx context.Context, userID string) (string, error) {
+	ticketBytes := make([]byte, 32)
+	if _, err := rand.Read(ticketBytes); err != nil {
+		return "", err
+	}
+	ticket := hex.EncodeToString(ticketBytes)
+
+	ticketKey := fmt.Sprintf("ws_ticket:%s", ticket)
+	if err := s.redis.Set(ctx, ticketKey, userID, wsTicketTTL).Err(); err != nil {
+		return "", err
+	}
+
+	return ticket, nil
+}
+
+func (s *Service) ConsumeWSTicket(ctx context.Context, ticket string) (string, error) {
+	ticketKey := fmt.Sprintf("ws_ticket:%s", ticket)
+
+	userID, err := s.redis.GetDel(ctx, ticketKey).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return "", ErrTicketNotFound
+		}
+		return "", err
+	}
+
+	return userID, nil
+}
