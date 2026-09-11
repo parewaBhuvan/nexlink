@@ -14,6 +14,7 @@ import (
 	"github.com/parewaBhuvan/nexlink/internal/auth"
 	"github.com/parewaBhuvan/nexlink/internal/otp"
 	"github.com/parewaBhuvan/nexlink/internal/router"
+	"github.com/parewaBhuvan/nexlink/internal/ws"
 )
 
 func main() {
@@ -54,7 +55,12 @@ func main() {
 
 	otpSender := otp.NewConsoleSender()
 	authService := auth.NewService(pool, rdb, otpSender)
-	r := router.NewRouter(authService)
+	hub := ws.NewHub()
+	go hub.Run()
+
+	wsService := ws.NewService(pool)
+
+	r := router.NewRouter(authService , hub, wsService);
 
 	r.GET("/health", func(c *gin.Context) {
 		dbErr := pool.Ping(c.Request.Context())
