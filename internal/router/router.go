@@ -7,16 +7,19 @@ import (
 
 	"github.com/parewaBhuvan/nexlink/internal/auth"
 	"github.com/parewaBhuvan/nexlink/internal/middleware"
+	"github.com/parewaBhuvan/nexlink/internal/ws"
 )
 
-func NewRouter(authService *auth.Service) *gin.Engine {
+func NewRouter(authService *auth.Service, hub *ws.Hub , wsService *ws.Service) *gin.Engine {
 	r := gin.Default()
 
 	// Public routes — no auth required
 	r.POST("/auth/request-otp", authService.RequestOTPHandler)
 	r.POST("/auth/verify-otp", authService.VerifyOTPHandler)
-
+	
+	r.GET("/ws", ws.UpgradeHandler(hub, wsService, authService))
 	// Protected routes — require valid bearer token
+	
 	protected := r.Group("/api")
 	protected.Use(middleware.AuthRequired(authService))
 	{
