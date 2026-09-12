@@ -48,6 +48,14 @@ func NewRouter(authService *auth.Service, hub *ws.Hub, wsService *ws.Service) *g
 			}
 			wsService.GetMessagesHandler(c, userID)
 		})
+		protected.POST("/conversations", func(c *gin.Context) {
+			userID, ok := middleware.GetUserID(c)
+			if !ok {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "user_id missing from context"})
+				return
+			}
+			wsService.CreateConversationHandler(c, userID)
+		})
 	}
 
 	return r
