@@ -10,16 +10,16 @@ import (
 	"github.com/parewaBhuvan/nexlink/internal/ws"
 )
 
-func NewRouter(authService *auth.Service, hub *ws.Hub , wsService *ws.Service) *gin.Engine {
+func NewRouter(authService *auth.Service, hub *ws.Hub, wsService *ws.Service) *gin.Engine {
 	r := gin.Default()
 
 	// Public routes — no auth required
 	r.POST("/auth/request-otp", authService.RequestOTPHandler)
 	r.POST("/auth/verify-otp", authService.VerifyOTPHandler)
-	
+
 	r.GET("/ws", ws.UpgradeHandler(hub, wsService, authService))
 	// Protected routes — require valid bearer token
-	
+
 	protected := r.Group("/api")
 	protected.Use(middleware.AuthRequired(authService))
 	{
@@ -39,6 +39,14 @@ func NewRouter(authService *auth.Service, hub *ws.Hub , wsService *ws.Service) *
 				return
 			}
 			authService.CreateWSTicketHandler(c, userID)
+		})
+		protected.GET("/conversations/:conversation_id/messages", func(c *gin.Context) {
+			userID, ok := middleware.GetUserID(c)
+			if !ok {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "user_id missing from context"})
+				return
+			}
+			wsService.GetMessagesHandler(c, userID)
 		})
 	}
 
