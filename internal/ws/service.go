@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -104,4 +105,105 @@ func (s *Service) GetMessages(ctx context.Context, conversationID string, before
 	}
 
 	return messages, rows.Err()
+}
+
+// error message for invalid entry and non existing participant
+var (
+	ErrInvalidParticipantCount = errors.New("invalid number of participants for this conversation type")
+	ErrParticipantNotFound     = errors.New("one or more participants do not exist")
+)
+
+type Conversation struct {
+	ConversationID string  `json:"conversation_id"`
+	Type           string  `json:"type"`
+	Name           *string `json:"name"`
+	Existing       bool    `json:"existing"`
+}
+
+// find existing current direct conversation
+func (s *Service) FindDirectConversation(ctx context.Context, userA, userB string) (string, error) {
+	var conversationID string
+	err := s.db.QueryRow(ctx,
+		`SELECT c.conversation_id
+		 FROM conversations c
+		 JOIN participants p1 ON p1.conversation_id = c.conversation_id AND p1.user_id = $1
+		 JOIN participants p2 ON p2.conversation_id = c.conversation_id AND p2.user_id = $2
+		 WHERE c.type = 'direct'`,
+		userA, userB,
+	).Scan(&conversationID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "22P02" {
+			return "", ErrParticipantNotFound
+		}
+		return "", err
+	}
+	return conversationID, nil
+}
+
+// Creating conversations
+func (s *Service) CreateConversation(ctx context.Context, convType string, name *string, participantIDs []string) (*Conversation, error) {
+	if convType == "direct" && len(participantIDs) != 2 {
+		return nil, ErrInvalidParticipantCount
+	}
+	if convType == "group" && len(participantIDs) < 2 {
+		return nil, ErrInvalidParticipantCount
+	}
+
+	if convType == "direct" {
+		existingID, err := s.FindDirectConversation(ctx, participantIDs[0], participantIDs[1])
+		if err != nil {
+			return nil, err
+		}
+		if existingID != "" {
+			return &Conversation{
+				ConversationID: existingID,
+				Type:           "direct",
+				Existing:       true,
+			}, nil
+		}
+	}
+
+	txn, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer txn.Rollback(ctx)
+
+	var conversationID string
+	err = txn.QueryRow(ctx,
+		`INSERT INTO conversations (type, name) VALUES ($1, $2) RETURNING conversation_id`,
+		convType, name,
+	).Scan(&conversationID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, uid := range participantIDs {
+		_, err := txn.Exec(ctx,
+			`INSERT INTO participants (conversation_id, user_id) VALUES ($1, $2)`,
+			conversationID, uid,
+		)
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && (pgErr.Code == "23503" || pgErr.Code == "22P02") {
+				return nil, ErrParticipantNotFound
+			}
+			return nil, err
+		}
+	}
+
+	if err := txn.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return &Conversation{
+		ConversationID: conversationID,
+		Type:           convType,
+		Name:           name,
+		Existing:       false,
+	}, nil
 }

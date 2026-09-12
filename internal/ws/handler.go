@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -106,4 +107,55 @@ func (s *Service) GetMessagesHandler(c *gin.Context, userID string) {
 		"messages":    messages,
 		"next_cursor": nextCursor,
 	})
+}
+
+type CreateConversationRequest struct {
+	Type           string   `json:"type" binding:"required,oneof=direct group"`
+	ParticipantIDs []string `json:"participant_ids" binding:"required"`
+	Name           *string  `json:"name"`
+}
+
+func (s *Service) CreateConversationHandler(c *gin.Context, userID string) {
+	var req CreateConversationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	allParticipants := dedupeParticipants(userID, req.ParticipantIDs)
+
+	conversation, err := s.CreateConversation(c.Request.Context(), req.Type, req.Name, allParticipants)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidParticipantCount):
+			c.JSON(http.StatusBadRequest, gin.H{"error": ErrInvalidParticipantCount.Error()})
+		case errors.Is(err, ErrParticipantNotFound):
+			c.JSON(http.StatusBadRequest, gin.H{"error": ErrParticipantNotFound.Error()})
+		default:
+			log.Printf("failed to create conversation: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		}
+		return
+	}
+
+	status := http.StatusCreated
+	if conversation.Existing {
+		status = http.StatusOK
+	}
+	c.JSON(status, conversation)
+}
+
+// check duplicattion of user when creating group convo -->
+func dedupeParticipants(creatorID string, participantIDs []string) []string {
+	seen := map[string]bool{creatorID: true}
+	result := []string{creatorID}
+
+	for _, id := range participantIDs {
+		if !seen[id] {
+			seen[id] = true
+			result = append(result, id)
+		}
+	}
+
+	return result
 }
