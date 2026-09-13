@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strings"
 
 	"github.com/gorilla/websocket"
 )
@@ -25,12 +26,14 @@ type IncomingMessage struct {
 func NewConnection(hub *Hub, ws *websocket.Conn, userId string, svc *Service) *Connection {
 	return &Connection{
 		UserID: userId,
-		Hub:    hub, 
+		Hub:    hub,
 		Send:   make(chan []byte, sendBufferSize),
 		WS:     ws,
 		Svc:    svc,
 	}
 }
+
+const maxMessageContentLength = 4000
 
 func (c *Connection) ReadPump() {
 	defer func() {
@@ -51,7 +54,28 @@ func (c *Connection) ReadPump() {
 			continue
 		}
 
+		trimmedContent := strings.TrimSpace(msg.Content)
+		if trimmedContent == "" {
+			log.Printf("empty message from user %s, dropping", c.UserID)
+			continue
+		}
+		if len(trimmedContent) > maxMessageContentLength {
+			log.Printf("message from user %s exceeds max length, dropping", c.UserID)
+			continue
+		}
+		msg.Content = trimmedContent
+
 		ctx := context.Background()
+
+		isParticipant, err := c.Svc.IsParticipant(ctx, msg.ConversationID, c.UserID)
+		if err != nil {
+			log.Printf("failed to check participant status for user %s: %v", c.UserID, err)
+			continue
+		}
+		if !isParticipant {
+			log.Printf("user %s attempted to send to conversation %s without being a participant", c.UserID, msg.ConversationID)
+			continue
+		}
 
 		participantIDs, err := c.Svc.GetParticipants(ctx, msg.ConversationID)
 		if err != nil {
@@ -64,9 +88,15 @@ func (c *Connection) ReadPump() {
 			continue
 		}
 
+		outboundPayload, err := json.Marshal(msg)
+		if err != nil {
+			log.Printf("failed to marshal outbound message: %v", err)
+			continue
+		}
+
 		c.Hub.broadcast <- &OutboundMessage{
 			RecipientIDs: participantIDs,
-			Payload:      data,
+			Payload:      outboundPayload,
 		}
 	}
 }
