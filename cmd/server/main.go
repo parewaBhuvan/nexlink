@@ -60,7 +60,7 @@ func main() {
 
 	wsService := ws.NewService(pool)
 
-	r := router.NewRouter(authService , hub, wsService);
+	r := router.NewRouter(authService, hub, wsService)
 
 	r.GET("/health", func(c *gin.Context) {
 		dbErr := pool.Ping(c.Request.Context())
@@ -82,5 +82,9 @@ func main() {
 		})
 	})
 
-	r.Run(":8080")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	r.Run(":" + port)
 }
