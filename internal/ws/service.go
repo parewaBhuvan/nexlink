@@ -28,7 +28,7 @@ func (s *Service) GetParticipants(ctx context.Context, conversationID string) ([
 	}
 	defer rows.Close()
 
-	var participantIDs []string
+	participantIDs := []string{}
 	for rows.Next() {
 		var userID string
 		if err := rows.Scan(&userID); err != nil {
@@ -99,7 +99,7 @@ func (s *Service) GetMessages(ctx context.Context, conversationID string, before
 	}
 	defer rows.Close()
 
-	var messages []Message
+	messages := []Message{}
 	for rows.Next() {
 		var m Message
 		if err := rows.Scan(&m.MessageID, &m.SenderID, &m.ContentType, &m.Content, &m.AttachmentURL, &m.CreatedAt); err != nil {
@@ -235,7 +235,7 @@ func (s *Service) GetUserConversations(ctx context.Context, userID string) ([]Co
 	}
 	defer rows.Close()
 
-	var conversations []ConversationSummary
+	conversations := []ConversationSummary{}
 	for rows.Next() {
 		var conv ConversationSummary
 		if err := rows.Scan(&conv.ConversationID, &conv.Type, &conv.Name, &conv.CreatedAt); err != nil {
@@ -269,7 +269,7 @@ func (s *Service) GetConversationParticipants(ctx context.Context, conversationI
 	}
 	defer rows.Close()
 
-	var participants []Participant
+	participants := []Participant{}
 	for rows.Next() {
 		var p Participant
 		if err := rows.Scan(&p.UserID, &p.UserName, &p.Role, &p.JoinedAt); err != nil {
