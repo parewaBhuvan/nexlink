@@ -159,3 +159,37 @@ func dedupeParticipants(creatorID string, participantIDs []string) []string {
 
 	return result
 }
+
+//handler for -> get conversation where user is a part of it
+
+func (s *Service) GetUserConversationsHandler(c *gin.Context, userID string) {
+	conversations, err := s.GetUserConversations(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"conversations": conversations})
+}
+
+//handler for -> get participants of a particular conversation
+
+func (s *Service) GetConversationParticipantsHandler(c *gin.Context, userID string) {
+	conversationID := c.Param("conversation_id")
+
+	isParticipant, err := s.IsParticipant(c.Request.Context(), conversationID, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if !isParticipant {
+		c.JSON(http.StatusForbidden, gin.H{"error": "you are not a participant in this conversation"})
+		return
+	}
+
+	participants, err := s.GetConversationParticipants(c.Request.Context(), conversationID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"participants": participants})
+}

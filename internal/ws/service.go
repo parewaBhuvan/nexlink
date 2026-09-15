@@ -64,6 +64,10 @@ func (s *Service) IsParticipant(ctx context.Context, conversationID, userID stri
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil
 		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "22P02" {
+			return false, nil
+		}
 		return false, err
 	}
 	return true, nil
@@ -206,4 +210,73 @@ func (s *Service) CreateConversation(ctx context.Context, convType string, name 
 		Name:           name,
 		Existing:       false,
 	}, nil
+}
+
+type ConversationSummary struct {
+	ConversationID string    `json:"conversation_id"`
+	Type           string    `json:"type"`
+	Name           *string   `json:"name"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// get conversation where user is a part of it
+
+func (s *Service) GetUserConversations(ctx context.Context, userID string) ([]ConversationSummary, error) {
+	rows, err := s.db.Query(ctx,
+		`SELECT c.conversation_id, c.type, c.name, c.created_at
+		 FROM conversations c
+		 JOIN participants p ON p.conversation_id = c.conversation_id
+		 WHERE p.user_id = $1
+		 ORDER BY c.created_at DESC`,
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var conversations []ConversationSummary
+	for rows.Next() {
+		var conv ConversationSummary
+		if err := rows.Scan(&conv.ConversationID, &conv.Type, &conv.Name, &conv.CreatedAt); err != nil {
+			return nil, err
+		}
+		conversations = append(conversations, conv)
+	}
+
+	return conversations, rows.Err()
+}
+
+type Participant struct {
+	UserID   string    `json:"user_id"`
+	UserName *string   `json:"user_name"`
+	Role     string    `json:"role"`
+	JoinedAt time.Time `json:"joined_at"`
+}
+
+//get participants of a particular conversation
+
+func (s *Service) GetConversationParticipants(ctx context.Context, conversationID string) ([]Participant, error) {
+	rows, err := s.db.Query(ctx,
+		`SELECT u.user_id, u.user_name, p.role, p.joined_at
+		 FROM participants p
+		 JOIN users u ON u.user_id = p.user_id
+		 WHERE p.conversation_id = $1`,
+		conversationID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var participants []Participant
+	for rows.Next() {
+		var p Participant
+		if err := rows.Scan(&p.UserID, &p.UserName, &p.Role, &p.JoinedAt); err != nil {
+			return nil, err
+		}
+		participants = append(participants, p)
+	}
+
+	return participants, rows.Err()
 }
